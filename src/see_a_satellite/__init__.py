@@ -26,11 +26,13 @@ from .predict import (
     group_transits,
     predict_transits,
 )
+from .weather import CloudCover, cloud_cover_at, fetch_cloud_cover
 
 __all__ = [
     "DAYS_TO_CHECK",
     "DEFAULT_MAX_MAGNITUDE",
     "CatalogError",
+    "CloudCover",
     "LookAngle",
     "RateLimitedError",
     "Satellite",
@@ -38,7 +40,9 @@ __all__ = [
     "TransitGroup",
     "brightest_possible",
     "build_catalog",
+    "cloud_cover_at",
     "dump_catalog",
+    "fetch_cloud_cover",
     "fetch_quicksat",
     "fetch_site_catalog",
     "group_transits",

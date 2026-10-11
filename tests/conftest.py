@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import json
 from typing import Any
 
 import aiohttp
@@ -23,6 +24,9 @@ class FakeResponse:
 
     async def read(self) -> bytes:
         return self.body
+
+    async def json(self) -> Any:
+        return json.loads(self.body)
 
     async def __aenter__(self) -> FakeResponse:
         return self
