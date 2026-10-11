@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "see-a-satellite"
+version = "0.1.0"
+description = "Predict naked-eye satellite passes, as See A Satellite Tonight does"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.13"
+authors = [{ name = "Willem Vooijs", email = "willem@vooijs.eu" }]
+keywords = ["satellite", "astronomy", "sgp4", "iss", "starlink", "home-assistant"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Astronomy",
+    "Typing :: Typed",
+]
+dependencies = ["aiohttp>=3.9", "numpy>=1.26", "sgp4>=2.23"]
+
+[project.urls]
+Homepage = "https://github.com/wildekek/see-a-satellite"
+Website = "https://james.darpinian.com/satellites/"
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6", "mypy>=1.11"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["tests/fixtures"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "SIM", "PL", "RUF", "I", "BLE", "D"]
+ignore = ["PLR0913", "PLR2004", "PLR0915", "PLR0912", "E501", "RUF001", "RUF003", "D203", "D213"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D"]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+combine-as-imports = true
+
+[tool.mypy]
+strict = true
+packages = ["see_a_satellite"]
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["sgp4.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# numpy arithmetic is typed as returning Any
+module = ["see_a_satellite.predict"]
+warn_return_any = false
