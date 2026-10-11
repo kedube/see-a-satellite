@@ -34,27 +34,17 @@ Checked against the website, for every pass the site shows over 5 days:
 - end times agree within 19 s
 - magnitudes agree within 0.03
 
-## Catalogs
+## Catalog
 
-- `fetch_site_catalog(session, "brightest" | "starlink")`: the website's own
-  catalog. It has CelesTrak elements plus magnitudes curated by the site's
-  author, and matches the website exactly.
-- `build_catalog(session, previous=...)`: a catalog built from public
-  sources only:
-  - CelesTrak general perturbations elements for active payloads, rocket
-    bodies and debris
-  - CelesTrak supplemental elements for Starlink
-  - intrinsic magnitudes from Mike McCants' Quicksat list
-  - typical magnitudes per rocket stage for stages that were never measured
-
-  Recent payloads have no published magnitude, so they are missing from this
-  catalog. CelesTrak declines repeated downloads within two hours, so
-  `build_catalog` takes the previous catalog and keeps its elements for any
-  data set it cannot refresh. Store the catalog with `dump_catalog`.
+`fetch_site_catalog(session, "brightest" | "starlink")` downloads the
+website's catalog: CelesTrak elements plus magnitudes and brightness models
+that the site's author collects and curates. This library only consumes it.
+The catalog is refreshed a few times a day; cache it (`dump_catalog` /
+`parse_site_catalog`) rather than downloading it on every prediction.
 
 ## Development
 
 ```sh
 uv sync
-uv run pytest && uv run mypy && uv run ruff check src tests tools
+uv run pytest && uv run mypy && uv run ruff check src tests
 ```
