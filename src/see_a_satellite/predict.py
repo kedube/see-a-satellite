@@ -233,60 +233,25 @@ def _sun_ecef(jd: np.ndarray) -> np.ndarray:
     return _rotate_z(eci, _gmst(jd))
 
 
-def _geodetic_height(p: np.ndarray) -> np.ndarray:
-    """Height above the WGS84 ellipsoid of Earth-fixed points (..., 3)."""
-    x, y, z = p[..., 0], p[..., 1], p[..., 2]
-    r = np.hypot(x, y)
-    lat = np.arctan2(z, r * (1 - _E2))
-    for _ in range(3):
-        sin_lat = np.sin(lat)
-        n = _A / np.sqrt(1 - _E2 * sin_lat * sin_lat)
-        h = r * np.cos(lat) + z * sin_lat - _A * _A / n
-        lat = np.arctan2(z, r * (1 - _E2 * n / (n + h)))
-    sin_lat = np.sin(lat)
-    n = _A / np.sqrt(1 - _E2 * sin_lat * sin_lat)
-    return r * np.cos(lat) + z * sin_lat - _A * _A / n
+# The ellipsoid grown by the minimum grazing height on both axes; it stays
+# within 2 cm of the true surface at that geodetic height.
+_GRAZING_RADII = np.array([_A, _A, _B]) + MIN_GRAZING_HEIGHT_M
 
 
-def _surface_normal(p: np.ndarray) -> np.ndarray:
-    """Geodetic surface normal at Earth-fixed points."""
-    n = p / np.array([_A * _A, _A * _A, _B * _B])
-    return n / np.linalg.norm(n, axis=-1, keepdims=True)
+def _sunlit(origin: np.ndarray, direction: np.ndarray) -> np.ndarray:
+    """Whether rays towards the sun clear the atmosphere (MIN_GRAZING_HEIGHT_M).
 
-
-def _grazing_height(origin: np.ndarray, direction: np.ndarray) -> np.ndarray:
-    """Lowest height above the ellipsoid along rays; negative if they hit it.
-
-    Equivalent to Cesium's IntersectionTests.grazingAltitudeLocation as used
-    by the site to check that sunlight reaches the satellite.
+    The site checks the lowest height along the ray with Cesium's
+    IntersectionTests.grazingAltitudeLocation. Equivalently, the ray must
+    miss the grown ellipsoid, which is a quadratic in scaled space where that
+    ellipsoid is the unit sphere.
     """
-    height = _geodetic_height(origin)
-    descending = np.einsum("ij,ij->i", direction, _surface_normal(origin)) < 0
-    if not descending.any():
-        return height
-    o = origin[descending]
-    d = direction[descending]
-    # Closest approach to the center in scaled space, where the ellipsoid is
-    # the unit sphere, tells whether the ray hits the Earth.
-    radii = np.array([_A, _A, _B])
-    so, sd = o / radii, d / radii
-    t_star = -np.einsum("ij,ij->i", so, sd) / np.einsum("ij,ij->i", sd, sd)
-    closest = so + t_star[:, None] * sd
-    hits = np.linalg.norm(closest, axis=-1) < 1.0
-    # Refine the minimum geodetic height along the ray by golden section.
-    lo, hi = 0.5 * t_star, 1.5 * t_star
-    ratio = (math.sqrt(5) - 1) / 2
-    for _ in range(40):
-        a = hi - ratio * (hi - lo)
-        b = lo + ratio * (hi - lo)
-        ha = _geodetic_height(o + a[:, None] * d)
-        hb = _geodetic_height(o + b[:, None] * d)
-        left = ha < hb
-        hi = np.where(left, b, hi)
-        lo = np.where(left, lo, a)
-    minimum = _geodetic_height(o + ((lo + hi) / 2)[:, None] * d)
-    height[descending] = np.where(hits, -np.abs(minimum), minimum)
-    return height
+    so, sd = origin / _GRAZING_RADII, direction / _GRAZING_RADII
+    a = np.einsum("ij,ij->i", sd, sd)
+    b = np.einsum("ij,ij->i", so, sd)
+    c = np.einsum("ij,ij->i", so, so) - 1.0
+    # Shadowed if the origin is inside, or the ray heads inwards and meets it.
+    return (c >= 0) & ((b >= 0) | (b * b - a * c <= 0))
 
 
 def _look_angle(observer: np.ndarray, lat: float, lon: float, pos: np.ndarray) -> LookAngle:
@@ -427,10 +392,7 @@ def _magnitudes(
     lit = np.isfinite(m)
     if lit.any():
         li = np.nonzero(lit)[0]
-        direction = sat_to_sun[li]
-        direction /= np.linalg.norm(direction, axis=-1, keepdims=True)
-        grazing = _grazing_height(pos[idx][li], direction)
-        m[li[grazing < MIN_GRAZING_HEIGHT_M]] = np.inf
+        m[li[~_sunlit(pos[idx][li], sat_to_sun[li])]] = np.inf
     mag[idx] = m
     return mag, sun_angle
 
@@ -566,18 +528,38 @@ def predict_transits(
         jd = np.full(n_minutes, jd_whole)
         fr = jd_frac + offsets
         sun = _sun_ecef(jd + fr)
-        for i in range(0, len(sats), _CHUNK_SATS):
-            chunk = sats[i : i + _CHUNK_SATS]
+        sun_angle = np.arccos(np.clip(sun @ observer.normal / np.linalg.norm(sun, axis=-1), -1, 1))
+        sky_limit = np.interp(sun_angle, _SUN_ANGLES, _LIMITING_MAGNITUDES, left=-100.0) - 0.3
+        # Chunks of similar brightness share the minutes when the sky is dark
+        # enough for their brightest member; the rest are never visible.
+        bounds = {id(s): brightest_possible(s) for s in sats}
+        by_brightness = sorted(sats, key=lambda s: bounds[id(s)])
+        for i in range(0, len(by_brightness), _CHUNK_SATS):
+            chunk = by_brightness[i : i + _CHUNK_SATS]
+            dark = sky_limit >= bounds[id(chunk[0])]
+            # Neighboring minutes too: refinement interpolates up to them.
+            dark[1:] |= dark[:-1].copy()
+            dark[:-1] |= dark[1:].copy()
+            minutes = np.nonzero(dark)[0]
+            if not len(minutes):
+                continue
             satrecs = [s.satrec() for s in chunk]
-            positions = _propagate(satrecs, jd, fr)
-            flat = positions.reshape(-1, 3)
+            positions = np.full((len(chunk), n_minutes, 3), np.nan)
+            positions[:, minutes] = _propagate(satrecs, jd[minutes], fr[minutes])
             intrinsic = np.repeat(
                 [s.magnitude if s.magnitude is not None else np.inf for s in chunk],
-                n_minutes,
+                len(minutes),
             )
-            model = np.repeat(np.array([s.model or "" for s in chunk], dtype=object), n_minutes)
-            mag, _ = _magnitudes(observer, flat, np.tile(sun, (len(chunk), 1)), intrinsic, model)
-            mag = mag.reshape(len(chunk), n_minutes)
+            model = np.repeat(np.array([s.model or "" for s in chunk], dtype=object), len(minutes))
+            dark_mag, _ = _magnitudes(
+                observer,
+                positions[:, minutes].reshape(-1, 3),
+                np.tile(sun[minutes], (len(chunk), 1)),
+                intrinsic,
+                model,
+            )
+            mag = np.full((len(chunk), n_minutes), np.inf)
+            mag[:, minutes] = dark_mag.reshape(len(chunk), len(minutes))
             for j, sat in enumerate(chunk):
                 if not np.any(mag[j] < max_magnitude + _COARSE_MAGNITUDE_MARGIN):
                     continue
@@ -592,7 +574,9 @@ def predict_transits(
                         max_magnitude=max_magnitude,
                     )
                 )
-    transits.sort(key=lambda t: t.start)
+    # Passes starting together keep the catalog's order.
+    order = {id(s): i for i, s in enumerate(satellites)}
+    transits.sort(key=lambda t: (t.start, order[id(t.satellite)]))
     return transits
 
 
