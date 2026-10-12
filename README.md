@@ -37,10 +37,16 @@ Checked against the website, for every pass the site shows over 5 days:
 ## Catalog
 
 `fetch_site_catalog(session, "brightest" | "starlink")` downloads the
-website's catalog: CelesTrak elements plus magnitudes and brightness models
-that the site's author collects and curates. This library only consumes it.
-The catalog is refreshed a few times a day; cache it (`dump_catalog` /
-`parse_site_catalog`) rather than downloading it on every prediction.
+website's catalog, which the site's author collects and curates. Orbital
+elements come mostly from [Space-Track](https://www.space-track.org/) (US
+Space Force 18th Space Defense Squadron), and Starlink elements come from
+[CelesTrak](https://celestrak.org/). Magnitudes come from Mike McCants and the
+MMT-9 survey (Karpov et al. 2016), and constellation phase functions come from
+published photometry. See James's
+[write-up](https://james.darpinian.com/blog/how-see-a-satellite-tonight-works).
+This library only consumes the catalog. The site refreshes it every 8 hours.
+Cache it (`dump_catalog` / `parse_site_catalog`) rather than downloading it on
+every prediction.
 
 ## Development
 

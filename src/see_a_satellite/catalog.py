@@ -1,8 +1,8 @@
 """The See A Satellite Tonight website's satellite catalogs.
 
-The site's author collects the catalogs: CelesTrak orbital elements with
-intrinsic magnitudes and brightness models curated from observations. This
-module only downloads and parses them.
+The site's author collects the catalogs: orbital elements (mostly from
+Space-Track, Starlink from CelesTrak) with intrinsic magnitudes and brightness
+models curated from observations. This module only downloads and parses them.
 """
 
 from __future__ import annotations
