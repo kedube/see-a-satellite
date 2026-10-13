@@ -77,6 +77,26 @@ def test_starlink_trains_only_keep_large_groups(satellites, transits) -> None:
     assert all(g.satellite_count > 5 for g in groups)
 
 
+def test_temporary_catalog_number(transits) -> None:
+    """Objects with CelesTrak's temporary 9-digit catalog numbers are predicted.
+
+    sgp4 rejects numbers that don't fit a TLE (above 339999), and one such
+    satellite used to stop the whole prediction.
+    """
+    original = transits[0].satellite
+    temporary = Satellite.from_omm(
+        {**original.omm, "NORAD_CAT_ID": "799501674"}, original.magnitude, original.model
+    )
+    ours = predict_transits([original, temporary], 52.0277, 5.5583, 194, start=START)
+    by_id = {
+        sat_id: [(t.start, t.end) for t in ours if t.satellite.norad_id == sat_id]
+        for sat_id in (original.norad_id, 799501674)
+    }
+    assert by_id[original.norad_id]
+    assert by_id[799501674] == by_id[original.norad_id]
+    assert temporary.omm["NORAD_CAT_ID"] == "799501674"
+
+
 def test_satellite_from_omm() -> None:
     """OMM fields as published by CelesTrak (all strings) are accepted."""
     sat = Satellite.from_omm(

@@ -45,6 +45,8 @@ _COARSE_MAGNITUDE_MARGIN = 2.0
 # Passes separated by at most this much are grouped together.
 _GROUP_GAP_S = 60
 _CHUNK_SATS = 48
+# Largest catalog number a TLE's five-character (Alpha-5) field can hold.
+_MAX_TLE_SATNUM = 339999
 
 # Limiting magnitude by sun angle from zenith. Weaver 1947, "The Visibility
 # Of Stars Without Optical Aid", PASP 59, 232, fig. 2, with daylight made a
@@ -122,8 +124,14 @@ class Satellite:
 
     def satrec(self) -> Satrec:
         """SGP4 propagator for this satellite."""
+        fields = dict(self.omm)
+        # CelesTrak gives new launches temporary 9-digit catalog numbers until
+        # they are cataloged. sgp4 rejects numbers that don't fit a TLE, but
+        # SGP4 only uses the number as a label.
+        if int(fields["NORAD_CAT_ID"]) > _MAX_TLE_SATNUM:
+            fields["NORAD_CAT_ID"] = "0"
         sat = Satrec()
-        omm.initialize(sat, dict(self.omm))
+        omm.initialize(sat, fields)
         return sat
 
 
